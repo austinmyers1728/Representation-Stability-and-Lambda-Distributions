@@ -1,1 +1,182 @@
+import json
 
+F = QQ['q', 't'].fraction_field()
+F.inject_variables()
+Symqt = SymmetricFunctions(F)
+Symqt.inject_shorthands(verbose = False)
+var('w')
+
+# Symmetric group character basis for Lambda
+st = SymmetricFunctions(QQ).st()
+# Schur function basis
+s = SymmetricFunctions(QQ).s()
+# Orthogonal group character basis
+o = SymmetricFunctions(QQ).o()
+# Symplectic group character basis
+sp = SymmetricFunctions(QQ).sp()
+
+# Gets relevant terms for the computation
+def get_small_terms(X, ptn_size):
+    Mu = X.support()
+    Tau = []
+    f = 0
+    for ptn in Mu:
+        if ptn.size() <= ptn_size:
+            Tau.append(ptn)
+
+    for ptn in Tau:
+        f += X.coefficient(ptn)*p[ptn]
+
+    return f
+
+# Finds the biggest partition in the symmetric function X in the power sum basis
+def biggest_partition(X):
+    Mu = X.support()
+    big = 0
+    for ptn in Mu:
+        if ptn.size() > big:
+            big = ptn.size()
+
+    return big
+
+# l symmetric function defined in Lemma 2.5.6
+def l(i, big):
+    l = 0
+    for d in divisors(i):
+        l += moebius(d)*(-p[d])^(Integer(i/d))
+        l = get_small_terms(l, big)
+    return (-1/i)*l
+
+# Plethystic logarithm; takes in a symmetric function X and computes to a desired number of terms
+def Log(X, num_terms, big):
+    LOG = 0
+    for i in range(1, num_terms):
+        LOG += l(i, big).plethysm(X - 1)
+        LOG = get_small_terms(LOG, big)
+        
+    return LOG
+
+# Standard exponential power series, up to a desired number of terms
+def exp(t, num_terms, big):
+    exp = 0
+    for i in range(0, num_terms):
+        exp += (1/factorial(i))*(t^i)
+        exp = get_small_terms(exp, big)
+    return exp
+
+# Plethystic exponential of a symmetric function X, up to a desired number of factors and terms
+def Exp(X, num_factors, num_terms, big):
+    EXP = 1
+    for i in range(1, num_factors):
+        EXP *= exp((1/i)*(p[i].plethysm(X)), num_terms, big)
+        EXP = get_small_terms(EXP, big)
+    return EXP
+
+# Takes in a partition ptn and returns a list of the partitions its character polynomial contains in the power sum basis
+def get_partitions(ptn):
+    Ptn = Partition(ptn)
+    a = p(st(Ptn))
+    n = 0
+    Polys = []
+    
+    for i in ptn:
+        n += i
+    
+    for j in range(0, n+1):
+        for P in Partitions(j):
+            if a.scalar(p(P)) != 0:
+                Polys.append(P)
+    return Polys
+
+# Takes in a symmetric function X and a partition ptn and returns only the terms appearing in the character polynomial of ptn
+def get_relevant_terms(X, ptn):
+    Mu = get_partitions(ptn)
+    f = 0
+    for P in Mu:
+        f += X.coefficient(P)*p(P)
+
+    return f
+
+def exp_val_Pk(ptn, k):
+    Ptn = Partition(ptn)
+    n = Ptn.size()
+    if k == 1:
+        a = p(st(Ptn))
+    elif k % 2 == 0:
+        a = p(sp(Ptn))
+    else:
+        a = p(o(Ptn))
+        
+    big = biggest_partition(a)
+    #sum of complete symmetric polys
+    H = sum(h[i] for i in range(1, n+1))
+
+    # number of pts on P^k in F_q, 1+q+...+q^k
+    power = sum(q^i for i in range(0,k+1))
+    constant = -sum(q^i for i in range(0,k))
+    X = p(1 + ((q^(k)-1)/(q^(k+1)-1))*(H))
+    f = Exp(power*Log(X, n+1, big), n+1, n+1, big)
+
+    # zeta factor at zeta(k)
+    zeta_C = prod((1-q^(-(k+1))*q^i) for i in range(0, k+1))
+    
+    if k == 1:
+        F = get_relevant_terms(f,Ptn)
+        value = zeta_C*(F.scalar(a))
+    else:
+        g = Exp(constant*h[1], n+1, n+1 , big)
+        m = g*f
+        M = get_relevant_terms(m,Ptn)
+        value = zeta_C*(M.scalar(a))
+    return value
+
+def laurent_expansion(f, order):
+    R = LaurentSeriesRing(QQ, w)
+    g = f.subs(q=1/w)
+    exp = g.series(w, order)
+    new = exp.truncate()
+    series = new.subs(w=1/q)
+    return series
+
+def starting_degree(f):
+    den = f.denominator()
+    num = f.numerator()
+    d = den.degree()
+    n = num.degree()
+    return n - d
+
+# stuff to write to a json file for the website
+def partition_key(part):
+    return ",".join(map(str, part))
+
+def write_json(n_max=2):
+    data1 = {}  # dict to hold results
+    data2 = {}
+    data3 = {}
+    
+    for n in range(1, n_max + 1):
+        for part in Partitions(n):
+            key = partition_key(part)
+
+            f = exp_val_Pk(part, 4)
+            latex_str1 = latex(f)
+            
+            value1 = "\\("+ latex_str1 + "\\)"
+            
+            expansion = laurent_expansion(f,20)
+            latex_str2 = latex(expansion)
+
+            value2 = "\\("+ latex_str2 + "+ \\cdots \\)"
+            
+            data1[key] = value1
+            data2[key] = value2
+    
+    # Write JSON file
+    with open("rational.json", "w") as f1:
+        json.dump(data1, f1, indent=3)
+    with open("laurent.json", "w") as f2:
+        json.dump(data2, f2, indent=3)
+
+#============================================================================================================================
+
+write_json()
