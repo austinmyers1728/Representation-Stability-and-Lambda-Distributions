@@ -1,1 +1,156 @@
+F = QQ['q', 'a', 'b'].fraction_field()
+F.inject_variables()
+Symqt = SymmetricFunctions(F)
+Symqt.inject_shorthands(verbose = False)
+var('w')
 
+# Character basis for Lambda
+st = SymmetricFunctions(QQ).st()
+
+# Gets relevant terms for the computation
+def get_small_terms(X, ptn_size):
+    Mu = X.support()
+    Tau = []
+    f = 0
+    for ptn in Mu:
+        if ptn.size() <= ptn_size:
+            Tau.append(ptn)
+
+    for ptn in Tau:
+        f += X.coefficient(ptn)*p[ptn]
+
+    return f
+
+# Finds the biggest partition in the symmetric function X in the power sum basis
+def biggest_partition(X):
+    Mu = X.support()
+    big = 0
+    for ptn in Mu:
+        if ptn.size() > big:
+            big = ptn.size()
+
+    return big
+
+# l symmetric function defined in Lemma 2.5.6
+def l(i, big):
+    l = 0
+    for d in divisors(i):
+        l += moebius(d)*(-p[d])^(Integer(i/d))
+        l = get_small_terms(l, big)
+    return (-1/i)*l
+
+# Plethystic logarithm; takes in a symmetric function X and computes to a desired number of terms
+def Log(X, num_terms, big):
+    LOG = 0
+    for i in range(1, num_terms):
+        LOG += l(i, big).plethysm(X - 1)
+        LOG = get_small_terms(LOG, big)
+        
+    return LOG
+
+# Standard exponential power series, up to a desired number of terms
+def exp(t, num_terms, big):
+    exp = 0
+    for i in range(0, num_terms):
+        exp += (1/factorial(i))*(t^i)
+        exp = get_small_terms(exp, big)
+    return exp
+
+# Plethystic exponential of a symmetric function X, up to a desired number of factors and terms
+def Exp(X, num_factors, num_terms, big):
+    EXP = 1
+    for i in range(1, num_factors):
+        EXP *= exp((1/i)*(p[i].plethysm(X)), num_terms, big)
+        EXP = get_small_terms(EXP, big)
+    return EXP
+
+# Takes in a partition ptn and returns a list of the partitions its character polynomial contains in the power sum basis
+def get_partitions(ptn):
+    Ptn = Partition(ptn)
+    a = p(st(Ptn))
+    n = 0
+    Polys = []
+    
+    for i in ptn:
+        n += i
+    
+    for j in range(0, n+1):
+        for P in Partitions(j):
+            if a.scalar(p(P)) != 0:
+                Polys.append(P)
+    return Polys
+
+# Takes in a symmetric function X and a partition ptn and returns only the terms appearing in the character polynomial of ptn
+def get_relevant_terms(X, ptn):
+    Mu = get_partitions(ptn)
+    f = 0
+    for P in Mu:
+        f += X.coefficient(P)*p(P)
+
+    return f
+
+def inner_product_EC(ptn): 
+    Ptn = Partition(ptn)
+    n = Ptn.size()
+    A = p(st(Ptn))
+    big = biggest_partition(A)
+    H = sum(h[i] for i in range(1, n+1))
+    X = p(1 + (1/(1+q))*(H))
+    f = Exp((q+1-a-b)*Log(X, n+1, big), n+1, n+1, big)
+    F = get_relevant_terms(f, Ptn)
+    g = F.scalar(A)
+    return g
+
+# For some reason Sage is having trouble multiplying by the zeta factor inside of functions, so for now I am just using the 
+# zeta factor right at the end
+def exp_val_EC(ptn):
+    f = inner_product_EC(ptn)
+    # zeta factor ^-1
+    z1 = (1-q^(-2))*(1-q^(-1))
+    z2 = (1-a*q^(-2))*(1-b*q^(-2))
+    zeta = z1/z2
+    return zeta*f
+
+def laurent_expansion(f, order):
+    R = LaurentSeriesRing(QQ, w)
+    g = f.subs(q=1/w)
+    exp = g.series(w, order)
+    new = exp.truncate()
+    series = new.subs(w=1/q)
+    return series
+
+def starting_degree(f):
+    den = f.denominator()
+    num = f.numerator()
+    d = den.degree()
+    n = num.degree()
+    return n - d
+
+#============================================================================================================================
+
+# Partition for desired family of representations
+Ptn = Partition([1])
+
+# Compute the generating function for the multiplicities as a rational function
+z1 = (1-q^(-2))*(1-q^(-1))
+z2 = (1-a*q^(-2))*(1-b*q^(-2))
+zeta = z1/z2
+f = inner_product_EC(Ptn)
+k = zeta*f
+latex_str1 = latex(k)
+
+t, c, d = var('t', 'c', 'd')
+
+k = k.subs(q=t)
+k = k.subs(a=c)
+k = k.subs(b=d)
+k = k.subs({c*d: t})
+k = k.subs(t=q)
+k = k.subs(c=a)
+k = k.subs(d=b)
+
+print(' ')
+print('Rational function for ' + str(Ptn) + ' :')
+#print(latex_str1)
+print(k)
+print(' ')
